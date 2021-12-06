@@ -1,2 +1,2 @@
 # ssdd
-practica4
+authors: mercuthio & Ismati5
