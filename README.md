@@ -1,2 +1,2 @@
-# ssdd
+# distributed systems
 authors: mercuthio & Ismati5
