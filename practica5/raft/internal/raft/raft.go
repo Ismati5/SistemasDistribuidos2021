@@ -15,6 +15,8 @@ import (
 
 	"raft/internal/comun/rpctimeout"
 )
+// Constante para fijar valor entero no inicializado
+const IntNOINICIALIZADO = -1
 
 //  false deshabilita por completo los logs de depuracion
 // Aseguraros de poner kEnableDebugLogs a false antes de la entrega
@@ -109,10 +111,10 @@ func (nr *NodoRaft) InicializarCampos(nodos []string, yo int) {
 	nr.enElecciones = false
 	nr.state = 0
 	nr.currentTerm = 0 //currentTerm
-	nr.VotedFor = -1
+	nr.VotedFor = IntNOINICIALIZADO
 	nr.commitIndex = 0 //commitIndex
 	nr.lastApplied = 0 //lastApplied
-	nr.IdLider = -1
+	nr.IdLider = IntNOINICIALIZADO
 
 	nr.recibido = make(chan int, len(nodos))
 	nr.log = make([]LogRegister, 1) //log[]
@@ -218,12 +220,12 @@ func (nr *NodoRaft) Para(args Vacio, reply *Vacio) error {
 	return nil
 }
 
-func (nr *NodoRaft) ObtenerEstado(args Vacio, reply Vacio) (int, int, bool) {
-	return nr.yo, nr.currentTerm, nr.state == 2
+func (nr *NodoRaft) ObtenerEstado(args Vacio, reply Vacio) (int, int, bool, int) {
+	return nr.yo, nr.currentTerm, nr.state == 2, nr.IdLider
 }
 
 func (nr *NodoRaft) ObtenerEstadoRPC(args Vacio, reply *RepBool) error {
-	_, _, reply.Value = nr.ObtenerEstado(Vacio{}, Vacio{}) //reply.Value = true si es lider
+	_, _, reply.Value, _ = nr.ObtenerEstado(Vacio{}, Vacio{}) //reply.Value = true si es lider
 	return nil
 }
 
@@ -332,7 +334,7 @@ func (nr *NodoRaft) ConsensoSometer(i int, reply []RespuestaAppendEntries, termi
 
 }
 
-func (nr *NodoRaft) SometerOperacion(operacion interface{}) (int, int, bool) {
+func (nr *NodoRaft) SometerOperacion(operacion interface{}) (int, int, bool, int, string) {
 
 	reply := make([]RespuestaAppendEntries, len(nr.Nodos))
 	terminado := make(chan bool)
@@ -354,7 +356,7 @@ func (nr *NodoRaft) SometerOperacion(operacion interface{}) (int, int, bool) {
 		_ = <-terminado //Nos bloqueamos hasta que goroutinas avisen que ha llegado mayoría de respuestas
 	}
 
-	return nr.commitIndex, nr.currentTerm, nr.state == 2
+	return nr.commitIndex, nr.currentTerm, nr.state == 2, nr.IdLider, ""
 }
 
 func (nr *NodoRaft) iniciarElecciones() {
@@ -363,11 +365,11 @@ func (nr *NodoRaft) iniciarElecciones() {
 	var reply []RespuestaPeticionVoto
 	reply = make([]RespuestaPeticionVoto, len(nr.Nodos))
 
-	votos := 1             //Nos votamos a nosotros mismos
-	nr.state = 1           //Soy candidato
-	nr.enElecciones = true //Iniciamos eleccioner
-	nr.IdLider = -1        //No hay lider
-	nr.currentTerm++       //Aumentamos el currentTerm al iniciar elecciones
+	votos := 1             				//Nos votamos a nosotros mismos
+	nr.state = 1           				//Soy candidato
+	nr.enElecciones = true 				//Iniciamos eleccioner
+	nr.IdLider = IntNOINICIALIZADO      //No hay lider
+	nr.currentTerm++       				//Aumentamos el currentTerm al iniciar elecciones
 	nr.VotedFor = nr.yo
 	nr.mux.Unlock()
 
@@ -444,10 +446,11 @@ func (nr *NodoRaft) PedirVoto(args *ArgsPeticionVoto, reply *RespuestaPeticionVo
 
 		//Si nuestro currentTerm distinto al del lider, podemos votar
 		if nr.currentTerm != args.Term {
-			nr.VotedFor = -1
+			nr.VotedFor = IntNOINICIALIZADO
 		}
 
-		if args.Term >= nr.currentTerm { //Si lider valido le votamos
+		if !((nr.log[nr.commitIndex].currentTerm > args.LastLogTerm) || 
+		((nr.log[nr.commitIndex].currentTerm == args.LastLogTerm) && (nr.lastApplied > args.LastLogIndex))) { //Si lider valido le votamos
 
 			if (nr.VotedFor == -1 || nr.VotedFor == args.CandidateId) && (args.LastLogIndex >= nr.lastApplied) {
 
